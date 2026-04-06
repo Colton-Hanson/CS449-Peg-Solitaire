@@ -16,7 +16,7 @@ A fully playable Peg Solitaire game with a graphical user interface (GUI) built 
 
 ## How to Run
 ```bash
-python gui.py
+py -3.10 gui.py
 ```
 
 ## How to Run Tests
