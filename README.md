@@ -21,7 +21,7 @@ py -3.10 gui.py
 
 ## How to Run Tests
 ```bash
-python -m pytest test_board.py -v
+py -3.10 -m pytest test_board.py -v
 ```
 
 ## Features
