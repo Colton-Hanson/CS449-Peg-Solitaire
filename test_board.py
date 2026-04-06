@@ -1,6 +1,7 @@
 """
 test_board.py - pytest unit tests for Peg Solitaire game logic.
-Tests cover board initialization, move validation, move execution, and game-over detection.
+Tests cover board initialization, move validation, move execution, game-over detection,
+and the ManualGame / AutomatedGame session classes.
 UI code (gui.py) is NOT imported here — pure logic tests only.
 """
 
@@ -11,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import pytest
 from board import Board, PEG, EMPTY, INVALID
 from board_types import EnglishBoard, HexagonBoard, DiamondBoard, create_board
+from game import Game, ManualGame, AutomatedGame
 
 
 # ── Board Initialization ───────────────────────────────────────────────────
@@ -219,3 +221,113 @@ class TestBoardFactory:
     def test_board_size_passed_correctly(self):
         board = create_board("english", 9)
         assert board.size == 9
+
+
+# ── ManualGame ─────────────────────────────────────────────────────────────
+
+class TestManualGame:
+
+    def setup_method(self):
+        self.game = ManualGame(EnglishBoard(7))
+
+    def test_manual_game_is_subclass_of_game(self):
+        assert isinstance(self.game, Game)
+
+    def test_select_peg_returns_valid_destinations(self):
+        # (3,1) can jump to (3,3) over (3,2) on a fresh English board
+        dests = self.game.select_peg(3, 1)
+        assert (3, 3) in dests
+
+    def test_select_peg_sets_selected_attribute(self):
+        self.game.select_peg(3, 1)
+        assert self.game.selected == (3, 1)
+
+    def test_select_peg_with_no_moves_returns_empty(self):
+        # Empty cell — no peg to select
+        dests = self.game.select_peg(3, 3)
+        assert dests == []
+        assert self.game.selected is None
+
+    def test_deselect_clears_selection(self):
+        self.game.select_peg(3, 1)
+        self.game.deselect()
+        assert self.game.selected is None
+        assert self.game.valid_destinations == []
+
+    def test_attempt_move_succeeds_and_updates_board(self):
+        self.game.select_peg(3, 1)
+        result = self.game.attempt_move(3, 3)
+        assert result is True
+        assert self.game.board.get_cell(3, 3) == PEG
+        assert self.game.board.get_cell(3, 1) == EMPTY
+
+    def test_attempt_move_clears_selection_on_success(self):
+        self.game.select_peg(3, 1)
+        self.game.attempt_move(3, 3)
+        assert self.game.selected is None
+        assert self.game.valid_destinations == []
+
+    def test_attempt_move_without_selection_returns_false(self):
+        result = self.game.attempt_move(3, 3)
+        assert result is False
+
+    def test_move_count_increments_on_success(self):
+        self.game.select_peg(3, 1)
+        self.game.attempt_move(3, 3)
+        assert self.game.move_count == 1
+
+    def test_move_count_does_not_increment_on_failure(self):
+        self.game.attempt_move(3, 3)  # no peg selected
+        assert self.game.move_count == 0
+
+
+# ── AutomatedGame ──────────────────────────────────────────────────────────
+
+class TestAutomatedGame:
+
+    def setup_method(self):
+        self.game = AutomatedGame(EnglishBoard(7))
+
+    def test_automated_game_is_subclass_of_game(self):
+        assert isinstance(self.game, Game)
+
+    def test_play_random_move_returns_a_move_tuple(self):
+        move = self.game.play_random_move()
+        assert move is not None
+        assert len(move) == 4  # (from_row, from_col, to_row, to_col)
+
+    def test_play_random_move_reduces_peg_count(self):
+        before = self.game.get_pegs()
+        self.game.play_random_move()
+        assert self.game.get_pegs() == before - 1
+
+    def test_play_random_move_increments_move_count(self):
+        self.game.play_random_move()
+        assert self.game.move_count == 1
+
+    def test_play_random_move_returns_none_when_game_over(self):
+        # Clear the board to a stuck state: one isolated peg
+        for r in range(self.game.board.size):
+            for c in range(len(self.game.board.grid[r])):
+                if self.game.board.grid[r][c] != INVALID:
+                    self.game.board.grid[r][c] = EMPTY
+        self.game.board.set_cell(3, 3, PEG)
+        result = self.game.play_random_move()
+        assert result is None
+
+    def test_play_to_end_reaches_game_over(self):
+        self.game.play_to_end()
+        assert self.game.is_game_over() is True
+
+    def test_play_to_end_returns_positive_move_count(self):
+        count = self.game.play_to_end()
+        assert count > 0
+
+    def test_multiple_random_moves_are_all_valid(self):
+        """Each move should decrease peg count by exactly 1."""
+        for _ in range(5):
+            before = self.game.get_pegs()
+            move = self.game.play_random_move()
+            if move is None:
+                break
+            assert self.game.get_pegs() == before - 1
