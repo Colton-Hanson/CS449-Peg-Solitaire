@@ -331,3 +331,133 @@ class TestAutomatedGame:
             if move is None:
                 break
             assert self.game.get_pegs() == before - 1
+
+
+# ── Recorder Tests ─────────────────────────────────────────────────────────
+
+import tempfile
+import os
+from recorder import GameRecorder, GameReplayer
+
+
+class TestGameRecorder:
+
+    def test_recorder_saves_file(self):
+        rec = GameRecorder("English", 7, "Manual")
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            path = f.name
+        try:
+            rec.save(path)
+            assert os.path.exists(path)
+        finally:
+            os.unlink(path)
+
+    def test_recorder_writes_header(self):
+        rec = GameRecorder("English", 7, "Manual")
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
+            path = f.name
+        try:
+            rec.save(path)
+            content = open(path).read()
+            assert "BOARD_TYPE=English" in content
+            assert "BOARD_SIZE=7" in content
+            assert "MODE=Manual" in content
+        finally:
+            os.unlink(path)
+
+    def test_recorder_writes_moves(self):
+        rec = GameRecorder("English", 7, "Manual")
+        rec.record_move(3, 1, 3, 3)
+        rec.record_move(5, 2, 3, 2)
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            path = f.name
+        try:
+            rec.save(path)
+            content = open(path).read()
+            assert "MOVE 3 1 3 3" in content
+            assert "MOVE 5 2 3 2" in content
+        finally:
+            os.unlink(path)
+
+    def test_recorder_writes_randomize(self):
+        board = EnglishBoard()
+        rec = GameRecorder("English", 7, "Manual")
+        rec.record_randomize(board.grid)
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            path = f.name
+        try:
+            rec.save(path)
+            content = open(path).read()
+            assert "RANDOMIZE" in content
+        finally:
+            os.unlink(path)
+
+
+class TestGameReplayer:
+
+    def _make_recording(self, moves=None, board_type="English", size=7, mode="Manual"):
+        rec = GameRecorder(board_type, size, mode)
+        for move in (moves or []):
+            rec.record_move(*move)
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
+            path = f.name
+        rec.save(path)
+        return path
+
+    def test_replayer_reads_header(self):
+        path = self._make_recording()
+        try:
+            r = GameReplayer(path)
+            assert r.board_type == "English"
+            assert r.board_size == 7
+            assert r.mode == "Manual"
+        finally:
+            os.unlink(path)
+
+    def test_replayer_reads_moves(self):
+        path = self._make_recording(moves=[(3, 1, 3, 3), (5, 2, 3, 2)])
+        try:
+            r = GameReplayer(path)
+            assert len(r.events) == 2
+            assert r.events[0] == ("MOVE", 3, 1, 3, 3)
+            assert r.events[1] == ("MOVE", 5, 2, 3, 2)
+        finally:
+            os.unlink(path)
+
+    def test_replayer_has_next(self):
+        path = self._make_recording(moves=[(3, 1, 3, 3)])
+        try:
+            r = GameReplayer(path)
+            assert r.has_next() is True
+            r.next_event()
+            assert r.has_next() is False
+        finally:
+            os.unlink(path)
+
+    def test_replayer_next_event_returns_correct_type(self):
+        path = self._make_recording(moves=[(3, 1, 3, 3)])
+        try:
+            r = GameReplayer(path)
+            event = r.next_event()
+            assert event[0] == "MOVE"
+        finally:
+            os.unlink(path)
+
+    def test_replayer_reset(self):
+        path = self._make_recording(moves=[(3, 1, 3, 3)])
+        try:
+            r = GameReplayer(path)
+            r.next_event()
+            assert r.has_next() is False
+            r.reset()
+            assert r.has_next() is True
+        finally:
+            os.unlink(path)
+
+    def test_replayer_no_events_when_empty(self):
+        path = self._make_recording(moves=[])
+        try:
+            r = GameReplayer(path)
+            assert r.has_next() is False
+        finally:
+            os.unlink(path)
